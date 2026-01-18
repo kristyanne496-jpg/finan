@@ -1,4 +1,0 @@
-secrets.toml
-  # Conteúdo do arquivo secrets.toml
-  SUPABASE_URL = "https://llgjxotnvqxfwbyiuhct.supabase.co"
-  SUPABASE_KEY = "sb_publishable_JS1JEHyr7P41BGGL7tm8xQ_tt2unVwP"
