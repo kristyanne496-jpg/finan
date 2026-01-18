@@ -1,68 +1,54 @@
 import streamlit as st
-import pandas as pd
-from datetime import datetime
+from supabase import create_client, Client
 
-# Configurações Iniciais da Página (Aparência de App)
+# Conexão com o Banco de Dados (Segredos do GitHub)
+url = st.secrets["SUPABASE_URL"]
+key = st.secrets["SUPABASE_KEY"]
+supabase: Client = create_client(url, key)
+
 st.set_page_config(page_title="FinanceApp 2026", layout="centered")
 
-# --- ESTILO CSS PARA APARÊNCIA DE APP ---
-st.markdown("""
-    <style>
-    .stApp { background-color: #f8f9fa; }
-    [data-testid="stHeader"] { visibility: hidden; }
-    .main-card { background: white; padding: 20px; border-radius: 15px; box-shadow: 0px 4px 12px rgba(0,0,0,0.1); }
-    </style>
-    """, unsafe_allow_html=True)
+# --- FUNÇÕES DE BANCO ---
+def salvar_dados(desc, valor, tipo, status, conta):
+    supabase.table("transacoes").insert({
+        "descricao": desc, "valor": valor, "tipo": tipo, "status": status, "conta": conta
+    }).execute()
 
-# --- MOCKUP DE BANCO DE DADOS (Persistência) ---
-# Em um ambiente real, aqui conectaríamos ao Supabase ou Firebase via GitHub Secrets
-if 'movimentacoes' not in st.session_state:
-    st.session_state.movimentacoes = pd.DataFrame(columns=['Data', 'Descricao', 'Valor', 'Conta', 'Tipo', 'Status'])
+def buscar_dados():
+    res = supabase.table("transacoes").select("*").execute()
+    return res.data
 
-# --- INTERFACE DE NAVEGAÇÃO ---
-aba1, aba2 = st.tabs(["💬 Registro Chat", "📅 Visão Mensal"])
+# --- INTERFACE ---
+aba1, aba2 = st.tabs(["💬 Chat de Registro", "📅 Visão Mensal"])
 
-# --- ABA 1: REGISTRO (CHAT) ---
 with aba1:
-    st.subheader("Registro Rápido")
+    # Lógica de cálculo dos totais vindo do banco
+    dados = buscar_dados()
+    df = pd.DataFrame(dados)
     
-    # Widgets de Resumo no Cabeçalho
-    col1, col2 = st.columns(2)
-    pendente_pagar = st.session_state.movimentacoes[(st.session_state.movimentacoes['Tipo'] == 'Despesa') & (st.session_state.movimentacoes['Status'] == 'Pendente')]['Valor'].sum()
-    pendente_receber = st.session_state.movimentacoes[(st.session_state.movimentacoes['Tipo'] == 'Receita') & (st.session_state.movimentacoes['Status'] == 'Pendente')]['Valor'].sum()
-    
-    col1.metric("🔴 A Pagar", f"R$ {pendente_pagar:.2f}")
-    col2.metric("🟢 A Receber", f"R$ {pendente_receber:.2f}")
-
-    # Interface de "Chat"
-    with st.container():
-        input_chat = st.text_input("O que aconteceu hoje?", placeholder="Ex: Almoço 45 Nubank ou Salário 5000 Santander")
-        col_btn1, col_btn2 = st.columns(2)
-        tipo = col_btn1.selectbox("Tipo", ["Despesa", "Receita", "Investimento"])
-        status = col_btn2.selectbox("Status", ["Pendente", "Concluído"])
-        
-        if st.button("Registrar Movimentação", use_container_width=True):
-            nova_linha = {
-                'Data': datetime.now().strftime("%d/%m/%Y"),
-                'Descricao': input_chat,
-                'Valor': 0.0, # Aqui entraria a lógica de extração de número do texto
-                'Conta': "Padrão",
-                'Tipo': tipo,
-                'Status': status
-            }
-            # Simulação de salvamento permanente
-            st.success("Registrado com sucesso!")
-
-# --- ABA 2: VISÃO MENSAL & LEMBRETES ---
-with aba2:
-    st.subheader("📅 Controle Mensal")
-    
-    # Lembrete Exclusivo de Investimentos
-    st.info("**💡 Lembrete de Investimento:** Não esqueça de realizar o aporte mensal planejado para atingir sua meta de 2026!")
-    
-    st.write("### Itens Pendentes")
-    df_pendente = st.session_state.movimentacoes[st.session_state.movimentacoes['Status'] == 'Pendente']
-    if df_pendente.empty:
-        st.write("Tudo em dia por aqui! ✅")
+    if not df.empty:
+        p_pagar = df[(df['tipo'] == 'Despesa') & (df['status'] == 'Pendente')]['valor'].sum()
+        p_receber = df[(df['tipo'] == 'Receita') & (df['status'] == 'Pendente')]['valor'].sum()
     else:
-        st.table(df_pendente)
+        p_pagar = p_receber = 0
+
+    col1, col2 = st.columns(2)
+    col1.metric("🔴 Pagar este mês", f"R$ {p_pagar}")
+    col2.metric("🟢 Receber este mês", f"R$ {p_receber}")
+
+    with st.expander("Novo Registro", expanded=True):
+        desc = st.text_input("O que foi feito?")
+        vlr = st.number_input("Valor (R$)", min_value=0.0)
+        tp = st.selectbox("Categoria", ["Despesa", "Receita", "Investimento"])
+        stt = st.selectbox("Status", ["Pendente", "Concluído"])
+        
+        if st.button("Salvar no App"):
+            salvar_dados(desc, vlr, tp, stt, "Conta Principal")
+            st.success("Informação salva para ambos os usuários!")
+            st.rerun()
+
+with aba2:
+    st.info("💡 **Lembrete:** Faltam R$ X para sua meta de investimento este mês.")
+    if not df.empty:
+        st.write("### Itens Pendentes")
+        st.dataframe(df[df['status'] == 'Pendente'])
